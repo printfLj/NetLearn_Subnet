@@ -2,65 +2,83 @@
 // SubnetCalculator.php
 
 class SubnetCalculator {
-    public static function calculate($baseIP, $basePrefix, $hostRequests) {
-        // Sort descending for VLSM
+    /**
+     * Main entry point. Accepts host requests as [{name, count}, ...]
+     * Sorts descending for VLSM, calculates subnets, returns steps + mode.
+     */
+    public static function calculate(string $baseIP, int $basePrefix, array $hostRequests): array {
+        // Sort descending by count for VLSM (largest subnet first)
         usort($hostRequests, fn($a, $b) => $b['count'] <=> $a['count']);
-        
-        $currentAddr = ip2long($baseIP);
-        $baseNetworkLong = $currentAddr;
-        $maxAddr = $currentAddr + pow(2, (32 - $basePrefix)) - 1;
-        
-        $results = [];
-        $steps = [];
+
+        $currentAddr     = ip2long($baseIP);
+        $maxAddr         = $currentAddr + (int)pow(2, 32 - $basePrefix) - 1;
+
+        $results  = [];
+        $steps    = [];
         $masksUsed = [];
 
         foreach ($hostRequests as $req) {
-            $needed = $req['count'];
-            $name = $req['name'];
+            $needed = (int)$req['count'];
+            $name   = trim($req['name']) !== '' ? $req['name'] : 'Unnamed';
 
-            // Logic: 2^n >= (hosts + 2)
-            $bitsNeeded = ceil(log($needed + 2, 2));
-            $newPrefix = 32 - $bitsNeeded;
-            $blockSize = pow(2, $bitsNeeded);
-            $masksUsed[] = $newPrefix;
-            
-            $networkAddr = $currentAddr;
+            // Integer loop: find smallest n where 2^n - 2 >= needed
+            // Avoids floating-point precision bugs from ceil(log(...))
+            $bitsNeeded = 1;
+            while ((int)pow(2, $bitsNeeded) - 2 < $needed) {
+                $bitsNeeded++;
+            }
+
+            $newPrefix    = 32 - $bitsNeeded;
+            $blockSize    = (int)pow(2, $bitsNeeded);
+            $networkAddr  = $currentAddr;
             $broadcastAddr = $currentAddr + $blockSize - 1;
+            $masksUsed[]  = $newPrefix;
 
             if ($broadcastAddr > $maxAddr) {
-                return ["status" => "error", "suggestion" => self::getSuggestion($hostRequests)];
+                return [
+                    "status"     => "error",
+                    "suggestion" => self::getSuggestion($hostRequests)
+                ];
             }
 
             $results[] = [
-                "name" => $name,
-                "prefix" => "/" . $newPrefix,
+                "name"            => $name,
+                "hosts_required"  => $needed,
+                "prefix"          => "/" . $newPrefix,
                 "network_address" => long2ip($networkAddr),
-                "first_usable" => long2ip($networkAddr + 1),
-                "last_usable" => long2ip($broadcastAddr - 1),
-                "broadcast" => long2ip($broadcastAddr),
-                "subnet_mask" => long2ip(-1 << (32 - $newPrefix))
+                "first_usable"    => long2ip($networkAddr + 1),
+                "last_usable"     => long2ip($broadcastAddr - 1),
+                "broadcast"       => long2ip($broadcastAddr),
+                "subnet_mask"     => long2ip(-1 << (32 - $newPrefix)),
+                "total_hosts"     => $blockSize - 2
             ];
 
-            // Record the step for the UI
-            $steps[] = "<strong>$name</strong>: Needed $needed hosts. Smallest block is $blockSize (/$newPrefix). Range: " . long2ip($networkAddr) . " to " . long2ip($broadcastAddr);
+            $steps[] = "<strong>$name</strong>: Needed $needed hosts → block size $blockSize (/$newPrefix). "
+                     . "Network: " . long2ip($networkAddr) . ", Broadcast: " . long2ip($broadcastAddr);
 
             $currentAddr = $broadcastAddr + 1;
         }
 
-        // Determine Mode
         $mode = (count(array_unique($masksUsed)) === 1) ? "FLSM (Fixed Length)" : "VLSM (Variable Length)";
 
         return [
-            "status" => "success", 
-            "subnets" => $results, 
-            "steps" => $steps,
-            "mode" => $mode
+            "status"  => "success",
+            "subnets" => $results,
+            "steps"   => $steps,
+            "mode"    => $mode
         ];
     }
 
-    private static function getSuggestion($hostRequests) {
+    private static function getSuggestion(array $hostRequests): int {
         $total = 0;
-        foreach ($hostRequests as $h) { $total += pow(2, ceil(log($h['count'] + 2, 2))); }
-        return 32 - ceil(log($total, 2));
+        foreach ($hostRequests as $req) {
+            $needed = (int)$req['count'];
+            $bits   = 1;
+            while ((int)pow(2, $bits) - 2 < $needed) {
+                $bits++;
+            }
+            $total += (int)pow(2, $bits);
+        }
+        return 32 - (int)ceil(log($total, 2));
     }
 }
