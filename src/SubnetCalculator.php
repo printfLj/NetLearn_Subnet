@@ -5,6 +5,7 @@ class SubnetCalculator {
     public static function calculateVLSM($baseIP, $basePrefix, $hostRequests) {
         // Sort requirements descending (CCNA Rule)
         arsort($hostRequests);
+        $hostRequests = array_values($hostRequests); // Re-index so names are A, B, C...
         
         $currentAddr = ip2long($baseIP);
         $baseNetworkLong = $currentAddr;
@@ -12,8 +13,12 @@ class SubnetCalculator {
         
         $results = [];
         foreach ($hostRequests as $name => $needed) {
-            // Calculate bits needed: 2^n >= (hosts + 2)
-            $bitsNeeded = ceil(log($needed + 2, 2));
+            // Find smallest n such that 2^n - 2 >= needed (i.e. 2^n >= needed + 2)
+            // Use integer loop to avoid floating-point precision issues with log()
+            $bitsNeeded = 1;
+            while ((pow(2, $bitsNeeded) - 2) < $needed) {
+                $bitsNeeded++;
+            }
             $newPrefix = 32 - $bitsNeeded;
             $blockSize = pow(2, $bitsNeeded);
             
@@ -30,14 +35,15 @@ class SubnetCalculator {
             }
 
             $results[] = [
-                "name" => "Subnet " . (is_numeric($name) ? chr(65 + $name) : $name),
-                "prefix" => "/" . $newPrefix,
+                "name"            => "Subnet " . chr(65 + $name),
+                "hosts_required"  => $needed,
+                "prefix"          => "/" . $newPrefix,
                 "network_address" => long2ip($networkAddr),
-                "first_usable" => long2ip($networkAddr + 1),
-                "last_usable" => long2ip($broadcastAddr - 1),
-                "broadcast" => long2ip($broadcastAddr),
-                "subnet_mask" => long2ip(-1 << (32 - $newPrefix)),
-                "total_hosts" => $blockSize - 2
+                "first_usable"    => long2ip($networkAddr + 1),
+                "last_usable"     => long2ip($broadcastAddr - 1),
+                "broadcast"       => long2ip($broadcastAddr),
+                "subnet_mask"     => long2ip(-1 << (32 - $newPrefix)),
+                "total_hosts"     => (int)($blockSize - 2)
             ];
 
             $currentAddr = $broadcastAddr + 1;
@@ -54,4 +60,4 @@ class SubnetCalculator {
         $suggestedPrefix = 32 - ceil(log($totalNeededSpace, 2));
         return $suggestedPrefix;
     }
-}   
+}
