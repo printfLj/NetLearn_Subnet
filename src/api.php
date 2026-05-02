@@ -7,38 +7,42 @@ require_once 'IpUtils.php';
 $action = $_GET['action'] ?? '';
 
 if ($action === 'generate') {
-    echo json_encode(['ip' => IpUtils::generateRandomIP($_GET['class'] ?? 'C')]);
-    exit;
-}
-
-if ($action === 'generate_for_prefix') {
-    $prefix = (int)($_GET['prefix'] ?? 24);
-    $prefix = max(0, min(30, $prefix)); // clamp to valid range
-    echo json_encode(['ip' => IpUtils::generateForPrefix($prefix)]);
+    $prefix = isset($_GET['prefix']) ? (int)$_GET['prefix'] : null;
+    if ($prefix !== null) {
+        $prefix = max(0, min(30, $prefix));
+        echo json_encode(['ip' => IpUtils::generateForPrefix($prefix)]);
+    } else {
+        echo json_encode(['ip' => IpUtils::generateRandomIP($_GET['class'] ?? 'C')]);
+    }
     exit;
 }
 
 if ($action === 'calculate') {
-    $data = json_decode(file_get_contents('php://input'), true);
-
+    $data   = json_decode(file_get_contents('php://input'), true);
     $baseIP = $data['base_ip'] ?? '';
     $prefix = (int)($data['prefix'] ?? 0);
     $hosts  = $data['hosts'] ?? [];
 
-    // Validate prefix: must be a positive integer between 1 and 30
-    if ($prefix < 0 || $prefix > 30) {
-        echo json_encode(['status' => 'error', 'message' => 'Prefix must be a positive integer between 1 and 30.']);
+    // Validate prefix
+    if ($prefix < 1 || $prefix > 30) {
+        echo json_encode(['status' => 'error', 'message' => 'Prefix must be between 1 and 30.']);
         exit;
     }
 
-    // Validate hosts: each must be a positive integer
-    $hosts = array_values(array_filter(array_map('intval', $hosts), fn($h) => $h > 0));
+    // Validate and sanitize hosts array: [{name, count}, ...]
+    $hosts = array_values(array_filter(
+        array_map(fn($h) => [
+            'name'  => trim($h['name'] ?? 'Unnamed'),
+            'count' => (int)($h['count'] ?? 0)
+        ], $hosts),
+        fn($h) => $h['count'] > 0
+    ));
+
     if (empty($hosts)) {
         echo json_encode(['status' => 'error', 'message' => 'At least one valid positive host count is required.']);
         exit;
     }
 
-    $result = SubnetCalculator::calculateVLSM($baseIP, $prefix, $hosts);
-    echo json_encode($result);
+    echo json_encode(SubnetCalculator::calculate($baseIP, $prefix, $hosts));
     exit;
 }
