@@ -83,7 +83,7 @@
                 <div class="mb-5">
                     <label class="block text-xs font-bold uppercase text-slate-500 mb-3">Host Requirements</label>
                     <div id="host-rows" class="space-y-2 mb-3">
-                        <div class="host-row grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_120px_auto] gap-2 items-center">
+                        <div class="host-row grid grid-cols-[2fr_1fr_auto] sm:grid-cols-[1fr_120px_auto] gap-2 items-center">
                             <input type="text" placeholder="Network name (e.g. Sales)"
                                 class="h-name w-full p-2.5 rounded-lg bg-slate-800 border border-slate-700 text-sm">
                             <input type="number" placeholder="Hosts" min="1" step="1" inputmode="numeric"
@@ -225,7 +225,7 @@
 
         function addHostRow() {
             const div = document.createElement('div');
-            div.className = 'host-row grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_120px_auto] gap-2 items-center';
+            div.className = 'host-row grid grid-cols-[2fr_1fr_auto] sm:grid-cols-[1fr_120px_auto] gap-2 items-center';
             div.innerHTML = makeHostRowHTML();
             document.getElementById('host-rows').appendChild(div);
         }
